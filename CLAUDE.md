@@ -25,7 +25,18 @@ See its README. Never move anything from it into git.
   If the board won't connect: hold BOOT, tap RESET, release BOOT, then run the command.
 - Kid-friendly path: double-tap RESET -> MATRXS3BOOT drive -> drag a `.uf2`. Make UF2s with
   `python tools/bin2uf2.py in.bin out.uf2` (ESP32-S3 family, base 0x0, app partition only).
-  `00-ORIGINAL-lumifur-5.0.2.uf2` is the app extracted from the dump; the UF2 route is untested on this board
-  until Sean confirms the drive appears and that file boots.
+  `00-ORIGINAL-lumifur-5.0.2.uf2` is the app extracted from the dump. UF2 route tested and working.
+  After a UF2 flash the board stays off USB-serial until a single RESET press.
+
+## Hardware/firmware facts (learned 2026-11-10)
+- Shipped firmware = upstream `48f033e` (dev branch, v5.0.2) + the seller's private "Buttons v3" mod, which we
+  recreated (UP = face list, DOWN = 36 hues/rainbow cycle/rainbow plasma, NVS key `buttonClrV3`) + BLE icon hidden.
+- **Must build with espressif32 6.x** (pinned 6.7.0 = Arduino 2.0.16 / IDF 4.4.7). IDF 5 apps (platform 7+/8) are
+  rejected by the TinyUF2/IDF 4.4 bootloader, which falls back to the UF2 drive.
+- Panels have **green and blue swapped** (orange FF8000 shows pink). Not yet fixed in firmware.
+- Fitted: LIS3DH accelerometer (±4g, 50Hz), UP/DOWN buttons. Not fitted: APDS9960 proximity (firmware retries
+  every few seconds), probably no mic. Display is two 64x32 panels = 128x32. FFat partition is empty (no videos).
+- Flash app only: `python -m esptool --port COM4 -b 921600 write-flash 0x10000 .pio/build/<env>/firmware.bin`.
+  Opening COM4 with pyserial defaults resets the board; set dtr/rts False before `open()`.
 - Ask before flashing. Prefer `pio run -t upload` (app only) over touching the filesystem partition, so the
   `ffat` partition (videos) survives.
