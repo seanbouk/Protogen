@@ -8,3 +8,7 @@ data/videos/*.lfv
 video_sources/*
 !video_sources/README.md
 
+
+# Local firmware dumps (may contain BLE bond keys) - never commit
+backup/
+*.bin.bak
