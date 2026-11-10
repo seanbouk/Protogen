@@ -788,9 +788,9 @@ static String getStaticColorHexString()
 }
 
 // ---------------------------------------------------------------------------
-// Button behaviour (recreates the "Buttons v3" mod the mask shipped with)
+// Button behaviour (based on the "Buttons v3" mod the mask shipped with)
 //   UP   = next face from BUTTON_FACE_CYCLE
-//   DOWN = next colour: 36 hues (10 degrees apart), then rainbow cycle, then rainbow plasma
+//   DOWN = next colour: 24 hues (15 degrees apart), rainbow cycle, rainbow plasma, white
 // ---------------------------------------------------------------------------
 static const uint8_t BUTTON_FACE_CYCLE[] = {
     VIEW_NORMAL_FACE, VIEW_BLUSH_FACE, VIEW_SEMICIRCLE_EYES, VIEW_X_EYES,
@@ -798,10 +798,12 @@ static const uint8_t BUTTON_FACE_CYCLE[] = {
     VIEW_CIRCLE_EYES, VIEW_ALT_FACE, VIEW_DVD_LOGO};
 constexpr size_t BUTTON_FACE_COUNT = sizeof(BUTTON_FACE_CYCLE) / sizeof(BUTTON_FACE_CYCLE[0]);
 
-constexpr uint8_t BUTTON_COLOUR_HUE_STEPS = 36;
-constexpr uint8_t BUTTON_COLOUR_RAINBOW_CYCLE = 36;
-constexpr uint8_t BUTTON_COLOUR_RAINBOW_PLASMA = 37;
-constexpr uint8_t BUTTON_COLOUR_COUNT = 38;
+constexpr uint8_t BUTTON_COLOUR_HUE_STEPS = 24;
+constexpr float BUTTON_COLOUR_HUE_DEGREES = 360.0f / BUTTON_COLOUR_HUE_STEPS; // 15 degrees
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_CYCLE = BUTTON_COLOUR_HUE_STEPS;      // 24
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_PLASMA = BUTTON_COLOUR_HUE_STEPS + 1; // 25
+constexpr uint8_t BUTTON_COLOUR_WHITE = BUTTON_COLOUR_HUE_STEPS + 2;          // 26
+constexpr uint8_t BUTTON_COLOUR_COUNT = BUTTON_COLOUR_HUE_STEPS + 3;
 constexpr uint8_t BUTTON_COLOUR_NONE = 0xFF; // colour last chosen from the app, not the button
 constexpr unsigned long BUTTON_RAINBOW_STEP_MS = 40;   // 25 colour updates per second
 constexpr float BUTTON_RAINBOW_DEGREES_PER_STEP = 2.0f; // full wheel every ~7 seconds
@@ -822,9 +824,8 @@ static uint8_t nextButtonFace(int current)
   return BUTTON_FACE_CYCLE[0]; // came from a view outside the list (e.g. chosen in the app)
 }
 
-// Full-saturation, full-brightness HSV -> RGB. Done in double precision with round-half-to-even so it
-// reproduces the original firmware's values exactly (10 deg -> FF2A00, 30 deg -> FF8000). Only runs on a
-// button press or a rainbow step, so the software-double cost is irrelevant.
+// Full-saturation, full-brightness HSV -> RGB. Double precision so exact steps round predictably;
+// only runs on a button press or a rainbow step, so the software-double cost is irrelevant.
 static CRGB hueDegreesToRgb(double hue)
 {
   hue = fmod(hue, 360.0);
@@ -853,9 +854,15 @@ static void applyButtonColourIndex(uint8_t index)
 
   if (gButtonColourIndex < BUTTON_COLOUR_HUE_STEPS)
   {
-    const CRGB colour = hueDegreesToRgb(gButtonColourIndex * 10.0f);
+    const CRGB colour = hueDegreesToRgb(gButtonColourIndex * BUTTON_COLOUR_HUE_DEGREES);
     setStaticColor(colour);
     saveSelectedColor(String(colorToHexString(toRgbColor(colour)).c_str()));
+  }
+  else if (gButtonColourIndex == BUTTON_COLOUR_WHITE)
+  {
+    const CRGB white = CRGB(255, 255, 255);
+    setStaticColor(white);
+    saveSelectedColor(String(colorToHexString(toRgbColor(white)).c_str()));
   }
   else if (gButtonColourIndex == BUTTON_COLOUR_RAINBOW_CYCLE)
   {
@@ -2836,7 +2843,17 @@ void updatePlasmaFace()
     facePlasmaDirty = true;
   }
 
-  if (now - lastPaletteChange > paletteInterval)
+  if (gButtonColourIndex == BUTTON_COLOUR_RAINBOW_PLASMA)
+  {
+    // "Rainbow plasma" picked with the DOWN button: hold the rainbow palette instead of shuffling.
+    static const CRGBPalette16 rainbowPalette(RainbowColors_p);
+    if (std::memcmp(&currentPalette, &rainbowPalette, sizeof(CRGBPalette16)) != 0)
+    {
+      currentPalette = rainbowPalette;
+      facePlasmaDirty = true;
+    }
+  }
+  else if (now - lastPaletteChange > paletteInterval)
   {
     lastPaletteChange = now;
     currentPalette = palettes[random(0, sizeof(palettes) / sizeof(palettes[0]))];
@@ -4034,7 +4051,7 @@ void setup()
       gRainbowCycleLastColour = getStaticColorCached(); // resume cycling from the saved colour
     }
   }
-  Serial.println("Buttons: UP = next face, DOWN = 36 colours + rainbow cycle + rainbow plasma.");
+  Serial.println("Buttons: UP = next face, DOWN = 24 colours + rainbow cycle + rainbow plasma + white.");
   {
     String storedText = getUserText();
     if (storedText.length() > 0)
@@ -4366,7 +4383,7 @@ void setup()
 
   mxconfig.driver = HUB75_I2S_CFG::FM6126A; // Default for panels using FM6126A chips
   
-  #ifdef DEBUG_ENABLE_BRIGTHNESS_BOOST_WAVESHARE //Refresh rate and cloock speed adjsutment to boost brightness and minimize flickering while dong so
+  #if DEBUG_ENABLE_BRIGTHNESS_BOOST_WAVESHARE // was #ifdef, which is true even when defined as 0. Refresh rate and cloock speed adjsutment to boost brightness and minimize flickering while dong so
   mxconfig.min_refresh_rate = 40; //Lower refresh rate=brighter but more flicker, this is the brightest point without flicker becoming intolerable
   mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;  //Rasied clock spee to contereact refresh flicker. 20MHz showed to be as stable as 16MHz with the reduce refresh rate in hardware testing.
   #else
