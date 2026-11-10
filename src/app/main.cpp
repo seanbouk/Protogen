@@ -787,6 +787,127 @@ static String getStaticColorHexString()
   return String(hex.c_str());
 }
 
+// ---------------------------------------------------------------------------
+// Button behaviour (recreates the "Buttons v3" mod the mask shipped with)
+//   UP   = next face from BUTTON_FACE_CYCLE
+//   DOWN = next colour: 36 hues (10 degrees apart), then rainbow cycle, then rainbow plasma
+// ---------------------------------------------------------------------------
+static const uint8_t BUTTON_FACE_CYCLE[] = {
+    VIEW_NORMAL_FACE, VIEW_BLUSH_FACE, VIEW_SEMICIRCLE_EYES, VIEW_X_EYES,
+    VIEW_SLANT_EYES, VIEW_SPIRAL_EYES, VIEW_PLASMA_FACE, VIEW_UWU_EYES,
+    VIEW_CIRCLE_EYES, VIEW_ALT_FACE, VIEW_DVD_LOGO};
+constexpr size_t BUTTON_FACE_COUNT = sizeof(BUTTON_FACE_CYCLE) / sizeof(BUTTON_FACE_CYCLE[0]);
+
+constexpr uint8_t BUTTON_COLOUR_HUE_STEPS = 36;
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_CYCLE = 36;
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_PLASMA = 37;
+constexpr uint8_t BUTTON_COLOUR_COUNT = 38;
+constexpr uint8_t BUTTON_COLOUR_NONE = 0xFF; // colour last chosen from the app, not the button
+constexpr unsigned long BUTTON_RAINBOW_STEP_MS = 40;   // 25 colour updates per second
+constexpr float BUTTON_RAINBOW_DEGREES_PER_STEP = 2.0f; // full wheel every ~7 seconds
+
+static uint8_t gButtonColourIndex = BUTTON_COLOUR_NONE;
+static float gRainbowCycleHue = 0.0f;
+static CRGB gRainbowCycleLastColour = CRGB::Black;
+
+static uint8_t nextButtonFace(int current)
+{
+  for (size_t i = 0; i < BUTTON_FACE_COUNT; ++i)
+  {
+    if (BUTTON_FACE_CYCLE[i] == current)
+    {
+      return BUTTON_FACE_CYCLE[(i + 1) % BUTTON_FACE_COUNT];
+    }
+  }
+  return BUTTON_FACE_CYCLE[0]; // came from a view outside the list (e.g. chosen in the app)
+}
+
+// Full-saturation, full-brightness HSV -> RGB. Done in double precision with round-half-to-even so it
+// reproduces the original firmware's values exactly (10 deg -> FF2A00, 30 deg -> FF8000). Only runs on a
+// button press or a rainbow step, so the software-double cost is irrelevant.
+static CRGB hueDegreesToRgb(double hue)
+{
+  hue = fmod(hue, 360.0);
+  if (hue < 0.0)
+    hue += 360.0;
+  const double x = 1.0 - fabs(fmod(hue / 60.0, 2.0) - 1.0);
+  double r = 0, g = 0, b = 0;
+  switch (static_cast<int>(hue / 60.0))
+  {
+  case 0: r = 1; g = x; break;
+  case 1: r = x; g = 1; break;
+  case 2: g = 1; b = x; break;
+  case 3: g = x; b = 1; break;
+  case 4: r = x; b = 1; break;
+  default: r = 1; b = x; break;
+  }
+  return CRGB(static_cast<uint8_t>(lrint(r * 255.0)),
+              static_cast<uint8_t>(lrint(g * 255.0)),
+              static_cast<uint8_t>(lrint(b * 255.0)));
+}
+
+static void applyButtonColourIndex(uint8_t index)
+{
+  gButtonColourIndex = index % BUTTON_COLOUR_COUNT;
+  const bool wantStaticColour = (gButtonColourIndex != BUTTON_COLOUR_RAINBOW_PLASMA);
+
+  if (gButtonColourIndex < BUTTON_COLOUR_HUE_STEPS)
+  {
+    const CRGB colour = hueDegreesToRgb(gButtonColourIndex * 10.0f);
+    setStaticColor(colour);
+    saveSelectedColor(String(colorToHexString(toRgbColor(colour)).c_str()));
+  }
+  else if (gButtonColourIndex == BUTTON_COLOUR_RAINBOW_CYCLE)
+  {
+    gRainbowCycleHue = 0.0f;
+    gRainbowCycleLastColour = hueDegreesToRgb(gRainbowCycleHue);
+    setStaticColor(gRainbowCycleLastColour);
+  }
+
+  if (staticColorModeEnabled != wantStaticColour || (wantStaticColour && auroraModeEnabled))
+  {
+    staticColorModeEnabled = wantStaticColour;
+    if (wantStaticColour)
+    {
+      auroraModeEnabled = false;
+      setAuroraMode(false);
+    }
+    setStaticColorMode(staticColorModeEnabled);
+    applyConfigOptions();
+  }
+  setButtonColourIndex(gButtonColourIndex);
+
+  facePlasmaDirty = true;
+  requestDisplayRefresh();
+  LOG_DEBUG("Button colour step: %u\n", gButtonColourIndex);
+}
+
+// Called every loop; only does work while the rainbow cycle is selected.
+static void updateButtonRainbowCycle(unsigned long now)
+{
+  static unsigned long lastStepMs = 0;
+  if (gButtonColourIndex != BUTTON_COLOUR_RAINBOW_CYCLE || !staticColorModeEnabled)
+  {
+    return;
+  }
+  if (gStaticColorState.color != gRainbowCycleLastColour)
+  {
+    gButtonColourIndex = BUTTON_COLOUR_NONE; // the app picked a colour - stop cycling
+    return;
+  }
+  if (now - lastStepMs < BUTTON_RAINBOW_STEP_MS)
+  {
+    return;
+  }
+  lastStepMs = now;
+  gRainbowCycleHue += BUTTON_RAINBOW_DEGREES_PER_STEP;
+  if (gRainbowCycleHue >= 360.0f)
+    gRainbowCycleHue -= 360.0f;
+  gRainbowCycleLastColour = hueDegreesToRgb(gRainbowCycleHue);
+  setStaticColor(gRainbowCycleLastColour);
+  facePlasmaDirty = true;
+}
+
 inline void setBlinkProgress(int newValue)
 {
   if (blinkProgress != newValue)
@@ -3905,6 +4026,15 @@ void setup()
     auroraModeEnabled = false;
   }
   ensureStaticColorLoaded();
+  if (hasButtonColourIndex())
+  {
+    gButtonColourIndex = getButtonColourIndex() % BUTTON_COLOUR_COUNT;
+    if (gButtonColourIndex == BUTTON_COLOUR_RAINBOW_CYCLE)
+    {
+      gRainbowCycleLastColour = getStaticColorCached(); // resume cycling from the saved colour
+    }
+  }
+  Serial.println("Buttons: UP = next face, DOWN = 36 colours + rainbow cycle + rainbow plasma.");
   {
     String storedText = getUserText();
     if (storedText.length() > 0)
@@ -5389,9 +5519,7 @@ void loop()
     if (!pairingResetHoldPressed && consumeButtonShortPress(upButtonState))
     {
       noteButtonInteraction(loopNow);
-      currentView = (currentView + 1);
-      if (currentView >= totalViews)
-        currentView = 0;
+      currentView = nextButtonFace(currentView);
       viewChangedByButton = true;
       scheduleLastViewPersist(currentView);
       lastActivityTime = loopNow;
@@ -5404,20 +5532,12 @@ void loop()
     {
       PROFILE_SECTION("ButtonInputs");
       noteButtonInteraction(loopNow);
-      if (currentView == 0)
-      {
-        currentView = static_cast<uint8_t>(totalViews - 1);
-      }
-      else
-      {
-        --currentView;
-      }
-      viewChangedByButton = true;
-      scheduleLastViewPersist(currentView);
+      applyButtonColourIndex(gButtonColourIndex == BUTTON_COLOUR_NONE ? 0 : gButtonColourIndex + 1);
       lastActivityTime = loopNow;
-      requestDisplayRefresh();
+      notifyBleTask();
     }
 #endif
+    updateButtonRainbowCycle(loopNow);
 
     if (pairingModeTriggered)
     {

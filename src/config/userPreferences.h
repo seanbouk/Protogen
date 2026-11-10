@@ -178,6 +178,21 @@ inline String getSelectedColor()
   return getPrefs().getString("selectedColor", "");
 }
 
+// DOWN-button colour step (0-35 = hue every 10 degrees, 36 = rainbow cycle, 37 = rainbow plasma).
+// Key name matches the firmware the mask shipped with, so its saved choice carries over.
+inline bool hasButtonColourIndex()
+{
+  return getPrefs().isKey("buttonClrV3");
+}
+inline uint8_t getButtonColourIndex()
+{
+  return getPrefs().getUChar("buttonClrV3", 0);
+}
+inline void setButtonColourIndex(uint8_t index)
+{
+  getPrefs().putUChar("buttonClrV3", index);
+}
+
 // Clear all preferences - Implement feature to reset controller to default settings
 inline void clearPreferences()
 {
