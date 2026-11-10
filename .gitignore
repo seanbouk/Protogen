@@ -9,6 +9,6 @@ video_sources/*
 !video_sources/README.md
 
 
-# Local firmware dumps (may contain BLE bond keys) - never commit
-backup/
+# Private: firmware dumps (BLE keys), builds, secrets - never commit
+Protogen-Mask-Private/
 *.bin.bak
