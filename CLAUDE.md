@@ -37,15 +37,6 @@ See its README. Never move anything from it into git.
   NOT in the UP list. DOWN = 6 hues 60 degrees apart, rainbow cycle, rainbow plasma (palette locked), white; NVS key
   `buttonColour`. Startup only restores a face from the UP list, otherwise default.
 
-## Her face drawings (private)
-- Sources: `Protogen-Mask-Private/faces/source/{default,alt,shake}.png` (2:1 drawings, right-hand panel side, nose at
-  the drawing's left). Generated header: `Protogen-Mask-Private/faces/custom_faces.h` (on the include path via
-  `-I$PROJECT_DIR/Protogen-Mask-Private/faces`). Public builds fall back to `src/assets/custom_faces_placeholder.h`.
-  Never commit her drawings or the generated header (public repo). Boot log says which set was used.
-- Regenerate: `python -I tools/faces_to_header.py Protogen-Mask-Private/faces/custom_faces.h
-  default=.../default.png alt=.../alt.png shake=.../shake.png`. White strokes = tint (follow colour mode);
-  coloured strokes keep their colour. Mapped: default -> VIEW_NORMAL_FACE, alt -> VIEW_ALT_FACE,
-  shake -> VIEW_SPIRAL_EYES. Her drawings came out of Sean's PhotoCraft doc via the clipboard (layers default/alt/shake).
 - **Must build with espressif32 6.x** (pinned 6.7.0 = Arduino 2.0.16 / IDF 4.4.7). IDF 5 apps (platform 7+/8) are
   rejected by the TinyUF2/IDF 4.4 bootloader, which falls back to the UF2 drive.
 - Colour order is standard RGB (fixed by using the standard MatrixPortal pins in the `protogen` env).
@@ -61,3 +52,13 @@ See its README. Never move anything from it into git.
   Opening COM4 with pyserial defaults resets the board; set dtr/rts False before `open()`.
 - Ask before flashing. Use the app-only esptool command above, not `pio run -t upload` (that can also rewrite the
   bootloader/partitions, which would lose the TinyUF2 drag-and-drop route).
+
+## Her face drawings (private)
+- Sources: `Protogen-Mask-Private/faces/source/{default,alt,shake}.png` (2:1 drawings, right-hand panel side, nose at
+  the drawing's left). Generated header: `Protogen-Mask-Private/faces/custom_faces.h` (on the include path via
+  `-I$PROJECT_DIR/Protogen-Mask-Private/faces`). Public builds fall back to `src/assets/custom_faces_placeholder.h`.
+  Never commit her drawings or the generated header (public repo). Boot log says which set was used.
+- Regenerate: `python -I tools/faces_to_header.py Protogen-Mask-Private/faces/custom_faces.h
+  default=.../default.png alt=.../alt.png shake=.../shake.png`. White strokes = tint (follow colour mode);
+  coloured strokes keep their colour. Mapped: default -> VIEW_NORMAL_FACE, alt -> VIEW_ALT_FACE,
+  shake -> VIEW_SPIRAL_EYES. Her drawings came out of Sean's PhotoCraft doc via the clipboard (layers default/alt/shake).
