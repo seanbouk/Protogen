@@ -31,6 +31,15 @@
 #include "effects/flameEffect.h"
 #include "effects/fluidEffect.h"
 #include "effects/monoVideoPlayer.h"
+// Custom face drawings: the real ones are private (Protogen-Mask-Private/faces, on the include path);
+// public builds fall back to simple placeholders. Regenerate with tools/faces_to_header.py.
+#if __has_include("custom_faces.h")
+#include "custom_faces.h"
+#define CUSTOM_FACES_SOURCE "private drawings"
+#else
+#include "assets/custom_faces_placeholder.h"
+#define CUSTOM_FACES_SOURCE "placeholders"
+#endif
 #include "core/AnimationState.h"
 #include "core/InternalTemperature.h"
 #include "core/ScrollState.h"
@@ -790,19 +799,19 @@ static String getStaticColorHexString()
 // ---------------------------------------------------------------------------
 // Button behaviour (based on the "Buttons v3" mod the mask shipped with)
 //   UP   = next face from BUTTON_FACE_CYCLE
-//   DOWN = next colour: 24 hues (15 degrees apart), rainbow cycle, rainbow plasma, white
+//   DOWN = next colour: 6 hues (60 degrees apart: red, yellow, green, cyan, blue, magenta),
+//          rainbow cycle, rainbow plasma, white
 // ---------------------------------------------------------------------------
-static const uint8_t BUTTON_FACE_CYCLE[] = {
-    VIEW_NORMAL_FACE, VIEW_BLUSH_FACE, VIEW_SEMICIRCLE_EYES, VIEW_X_EYES,
-    VIEW_SLANT_EYES, VIEW_SPIRAL_EYES, VIEW_PLASMA_FACE, VIEW_UWU_EYES,
-    VIEW_CIRCLE_EYES, VIEW_ALT_FACE, VIEW_DVD_LOGO};
+// Her faces reachable with UP. The shake face (VIEW_SPIRAL_EYES) is deliberately not here: it only
+// appears when the mask is shaken, then reverts.
+static const uint8_t BUTTON_FACE_CYCLE[] = {VIEW_NORMAL_FACE, VIEW_ALT_FACE};
 constexpr size_t BUTTON_FACE_COUNT = sizeof(BUTTON_FACE_CYCLE) / sizeof(BUTTON_FACE_CYCLE[0]);
 
-constexpr uint8_t BUTTON_COLOUR_HUE_STEPS = 24;
-constexpr float BUTTON_COLOUR_HUE_DEGREES = 360.0f / BUTTON_COLOUR_HUE_STEPS; // 15 degrees
-constexpr uint8_t BUTTON_COLOUR_RAINBOW_CYCLE = BUTTON_COLOUR_HUE_STEPS;      // 24
-constexpr uint8_t BUTTON_COLOUR_RAINBOW_PLASMA = BUTTON_COLOUR_HUE_STEPS + 1; // 25
-constexpr uint8_t BUTTON_COLOUR_WHITE = BUTTON_COLOUR_HUE_STEPS + 2;          // 26
+constexpr uint8_t BUTTON_COLOUR_HUE_STEPS = 6;
+constexpr float BUTTON_COLOUR_HUE_DEGREES = 360.0f / BUTTON_COLOUR_HUE_STEPS; // 60 degrees
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_CYCLE = BUTTON_COLOUR_HUE_STEPS;      // 6
+constexpr uint8_t BUTTON_COLOUR_RAINBOW_PLASMA = BUTTON_COLOUR_HUE_STEPS + 1; // 7
+constexpr uint8_t BUTTON_COLOUR_WHITE = BUTTON_COLOUR_HUE_STEPS + 2;          // 8
 constexpr uint8_t BUTTON_COLOUR_COUNT = BUTTON_COLOUR_HUE_STEPS + 3;
 constexpr uint8_t BUTTON_COLOUR_NONE = 0xFF; // colour last chosen from the app, not the button
 constexpr unsigned long BUTTON_RAINBOW_STEP_MS = 40;   // 25 colour updates per second
@@ -822,6 +831,16 @@ static uint8_t nextButtonFace(int current)
     }
   }
   return BUTTON_FACE_CYCLE[0]; // came from a view outside the list (e.g. chosen in the app)
+}
+
+static bool isButtonFace(int view)
+{
+  for (size_t i = 0; i < BUTTON_FACE_COUNT; ++i)
+  {
+    if (BUTTON_FACE_CYCLE[i] == view)
+      return true;
+  }
+  return false;
 }
 
 // Full-saturation, full-brightness HSV -> RGB. Double precision so exact steps round predictably;
@@ -4051,7 +4070,8 @@ void setup()
       gRainbowCycleLastColour = getStaticColorCached(); // resume cycling from the saved colour
     }
   }
-  Serial.println("Buttons: UP = next face, DOWN = 24 colours + rainbow cycle + rainbow plasma + white.");
+  Serial.println("Buttons: UP = next face, DOWN = 6 colours + rainbow cycle + rainbow plasma + white.");
+  Serial.println("Custom faces: " CUSTOM_FACES_SOURCE);
   {
     String storedText = getUserText();
     if (storedText.length() > 0)
@@ -4078,6 +4098,12 @@ void setup()
 
   // - LOAD LAST VIEW -
   currentView = getLastView();
+  if (!isButtonFace(currentView))
+  {
+    // Saved view is from older firmware, the app, or the shake face: always start on one of her faces.
+    Serial.printf("Saved view %d is not a face in the UP list; starting on default.\n", currentView);
+    currentView = BUTTON_FACE_CYCLE[0];
+  }
   previousView = currentView;
   gLastPersistedView = currentView;
   Serial.printf("Loaded last view: %d\n", currentView);
@@ -4849,6 +4875,51 @@ static void renderFaceWithPlasma()
   updatePlasmaFace();
 }
 
+// Draws one custom face: tint pixels take the current colour mode (plasma / DOWN-button colour),
+// fixed-colour pixels keep their drawn colour. The drawing is for the right-hand panel (x 64-127);
+// the left-hand panel (x 0-63) gets the mirror image, so the nose sits in the middle of the mask.
+static void drawCustomFace(const uint8_t *tint, const uint8_t *tintMirror, const uint16_t *colour)
+{
+  drawPlasmaXbm(64, 0, CUSTOM_FACES_WIDTH, CUSTOM_FACES_HEIGHT, tint, 0, 1.0f);
+  drawPlasmaXbm(0, 0, CUSTOM_FACES_WIDTH, CUSTOM_FACES_HEIGHT, tintMirror, 128, 1.0f);
+
+  for (int y = 0; y < CUSTOM_FACES_HEIGHT; ++y)
+  {
+    for (int x = 0; x < CUSTOM_FACES_WIDTH; ++x)
+    {
+      const uint16_t c = pgm_read_word(&colour[y * CUSTOM_FACES_WIDTH + x]);
+      if (c == 0)
+        continue;
+      const uint8_t r = static_cast<uint8_t>(((c >> 11) & 0x1F) * 255 / 31);
+      const uint8_t g = static_cast<uint8_t>(((c >> 5) & 0x3F) * 255 / 63);
+      const uint8_t b = static_cast<uint8_t>((c & 0x1F) * 255 / 31);
+      const uint16_t out = dma_display->color565(scaleRawFaceComponentForPanelHeadroom(r),
+                                                 scaleRawFaceComponentForPanelHeadroom(g),
+                                                 scaleRawFaceComponentForPanelHeadroom(b));
+      dma_display->drawPixel(64 + x, y, out);
+      dma_display->drawPixel(CUSTOM_FACES_WIDTH - 1 - x, y, out);
+    }
+  }
+}
+
+static void renderCustomDefaultFace()
+{
+  drawCustomFace(FACE_DEFAULT_TINT, FACE_DEFAULT_TINT_MIRROR, FACE_DEFAULT_COLOUR);
+  updatePlasmaFace();
+}
+
+static void renderCustomAltFace()
+{
+  drawCustomFace(FACE_ALT_TINT, FACE_ALT_TINT_MIRROR, FACE_ALT_COLOUR);
+  updatePlasmaFace();
+}
+
+static void renderCustomShakeFace()
+{
+  drawCustomFace(FACE_SHAKE_TINT, FACE_SHAKE_TINT_MIRROR, FACE_SHAKE_COLOUR);
+  updatePlasmaFace();
+}
+
 static void renderSpiralEyesView()
 {
   updatePlasmaFace();
@@ -4995,12 +5066,12 @@ static const ViewRenderFunc VIEW_RENDERERS[TOTAL_VIEWS] = {
     patternPlasma,                 // VIEW_PATTERN_PLASMA
     drawTransFlag,                 // VIEW_TRANS_FLAG
     drawLGBTFlag,                  // VIEW_LGBT_FLAG
-    renderFaceWithPlasma,          // VIEW_NORMAL_FACE
+    renderCustomDefaultFace,       // VIEW_NORMAL_FACE  (her 'default' drawing)
     renderFaceWithPlasma,          // VIEW_BLUSH_FACE
     renderFaceWithPlasma,          // VIEW_SEMICIRCLE_EYES
     renderFaceWithPlasma,          // VIEW_X_EYES
     renderFaceWithPlasma,          // VIEW_SLANT_EYES
-    renderSpiralEyesView,          // VIEW_SPIRAL_EYES
+    renderCustomShakeFace,         // VIEW_SPIRAL_EYES  (her 'shake' drawing; shown when shaken)
     renderPlasmaFaceView,          // VIEW_PLASMA_FACE
     renderFaceWithPlasma,          // VIEW_UWU_EYES
     updateStarfield,               // VIEW_STARFIELD
@@ -5018,7 +5089,7 @@ static const ViewRenderFunc VIEW_RENDERERS[TOTAL_VIEWS] = {
     staticColor,                   // VIEW_STATIC_COLOR
     patternRainbowGradient,        // VIEW_RAINBOW_GRADIENT
     patternRainbowLinearBand,      // VIEW_RAINBOW_LINEAR_BAND
-    renderFaceWithPlasma,          // VIEW_ALT_FACE
+    renderCustomAltFace,           // VIEW_ALT_FACE     (her 'alt' drawing)
     renderVideoPlayerView,         // VIEW_VIDEO_PLAYER
 };
 

@@ -33,8 +33,19 @@ See its README. Never move anything from it into git.
 
 ## Hardware/firmware facts (learned 2026-11-10)
 - Shipped firmware = upstream `48f033e` (dev branch, v5.0.2) + the seller's private "Buttons v3" mod, which we
-  recreated (UP = face list, DOWN colours, BLE icon hidden). DOWN is now ours: 24 hues at 15 degrees, rainbow cycle,
-  rainbow plasma (rainbow palette locked), white; NVS key `buttonColour`.
+  recreated, then replaced. Now: UP toggles her faces (default <-> alt); shaking shows her "shake" face, which is
+  NOT in the UP list. DOWN = 6 hues 60 degrees apart, rainbow cycle, rainbow plasma (palette locked), white; NVS key
+  `buttonColour`. Startup only restores a face from the UP list, otherwise default.
+
+## Her face drawings (private)
+- Sources: `Protogen-Mask-Private/faces/source/{default,alt,shake}.png` (2:1 drawings, right-hand panel side, nose at
+  the drawing's left). Generated header: `Protogen-Mask-Private/faces/custom_faces.h` (on the include path via
+  `-I$PROJECT_DIR/Protogen-Mask-Private/faces`). Public builds fall back to `src/assets/custom_faces_placeholder.h`.
+  Never commit her drawings or the generated header (public repo). Boot log says which set was used.
+- Regenerate: `python -I tools/faces_to_header.py Protogen-Mask-Private/faces/custom_faces.h
+  default=.../default.png alt=.../alt.png shake=.../shake.png`. White strokes = tint (follow colour mode);
+  coloured strokes keep their colour. Mapped: default -> VIEW_NORMAL_FACE, alt -> VIEW_ALT_FACE,
+  shake -> VIEW_SPIRAL_EYES. Her drawings came out of Sean's PhotoCraft doc via the clipboard (layers default/alt/shake).
 - **Must build with espressif32 6.x** (pinned 6.7.0 = Arduino 2.0.16 / IDF 4.4.7). IDF 5 apps (platform 7+/8) are
   rejected by the TinyUF2/IDF 4.4 bootloader, which falls back to the UF2 drive.
 - Colour order is standard RGB (fixed by using the standard MatrixPortal pins in the `protogen` env).
